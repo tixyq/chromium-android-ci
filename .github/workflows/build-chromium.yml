@@ -143,7 +143,7 @@ jobs:
           mkdir -p out/arm32
           cp "$GITHUB_WORKSPACE/args.gn" out/arm32/args.gn
           # Strip flags that newer Chromium rejects, if present.
-          sed -i '/^enable_remoting/d;/^enable_cardboard/d;/^enable_arcore/d;/^enable_gvr_services/d' out/arm32/args.gn
+          sed -i '/^enable_remoting/d;/^enable_cardboard/d;/^enable_arcore/d;/^enable_gvr_services/d;/^enable_vr/d;/^enable_webrtc/d' out/arm32/args.gn
           echo '--- args.gn ---'
           cat out/arm32/args.gn
 
