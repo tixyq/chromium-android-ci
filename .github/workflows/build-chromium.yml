@@ -132,6 +132,7 @@ jobs:
           set -eux
           cd "$HOME/chromium/src"
           git checkout -- base/tracing/test/data/ || true
+          python3 third_party/perfetto/tools/test_data --dir base/tracing/test/data download --overwrite || true
           cd "$HOME/chromium"
           gclient runhooks
 
