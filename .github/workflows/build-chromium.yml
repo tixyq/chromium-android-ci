@@ -40,10 +40,11 @@ jobs:
       - name: Expand swap (helps ThinLTO link)
         run: |
           set -eux
-          sudo fallocate -l 12G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=12288
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
+          SWAPFILE=/mnt/swapfile
+          sudo fallocate -l 12G "$SWAPFILE" || sudo dd if=/dev/zero of="$SWAPFILE" bs=1M count=12288
+          sudo chmod 600 "$SWAPFILE"
+          sudo mkswap "$SWAPFILE"
+          sudo swapon "$SWAPFILE"
           free -h
 
       - name: Install build deps
@@ -143,6 +144,7 @@ jobs:
         if: always()
         run: |
           set -eux
+          [ -d "$HOME/chromium/src" ] || { echo "no src checkout, nothing to collect"; exit 0; }
           cd "$HOME/chromium/src"
           mkdir -p "$GITHUB_WORKSPACE/artifacts"
           find out/arm32 -maxdepth 3 \( -name '*.apk' -o -name '*.apks' -o -name '*.aab' \) -print0 \
