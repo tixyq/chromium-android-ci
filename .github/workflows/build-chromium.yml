@@ -158,7 +158,8 @@ jobs:
         run: |
           set -eux
           cd "$HOME/chromium/src"
-          autoninja -C out/arm32 -j 3 -l 4 "${{ inputs.build_target || 'chrome_public_apk' }}"
+          # autoninja forwards -j to siso, which dropped that flag; use ninja directly.
+          ninja -C out/arm32 -j 3 "${{ inputs.build_target || 'chrome_public_apk' }}"
 
       - name: Collect artifacts
         if: always()
