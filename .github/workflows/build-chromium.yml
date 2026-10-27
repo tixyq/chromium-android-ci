@@ -97,12 +97,26 @@ jobs:
           target_os = ["android"]
           EOF
           if [ ! -d src/.git ]; then
+            rm -f .gclient
             fetch --nohooks --no-history chromium
+            cat > .gclient <<EOF
+          solutions = [
+            {
+              "name": "src",
+              "url": "https://chromium.googlesource.com/chromium/src.git",
+              "managed": False,
+              "custom_deps": {},
+              "custom_vars": {},
+            },
+          ]
+          target_os = ["android"]
+          EOF
           fi
           cd src
           git fetch --depth 1 origin "refs/tags/${VERSION}:refs/tags/${VERSION}" || \
             git fetch --depth 1 origin "${VERSION}"
           git checkout -f "${VERSION}"
+          cd ..
           gclient sync -D --force --reset --with_branch_heads --nohooks
 
       - name: Install Chromium build deps
