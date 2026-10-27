@@ -126,10 +126,14 @@ jobs:
           ./build/install-build-deps.sh --no-prompt --no-chromeos-fonts --no-arm
 
       - name: Run hooks (ARM sysroot, Android NDK)
+        env:
+          GIT_TERMINAL_PROMPT: "0"
         run: |
           set -eux
           cd "$HOME/chromium/src"
-          gclient runhooks
+          git checkout -- base/tracing/test/data/ || true
+          cd "$HOME/chromium"
+          gclient runhooks --reset
 
       - name: Write args.gn
         run: |
