@@ -133,7 +133,7 @@ jobs:
           cd "$HOME/chromium/src"
           git checkout -- base/tracing/test/data/ || true
           cd "$HOME/chromium"
-          gclient runhooks --reset
+          gclient runhooks
 
       - name: Write args.gn
         run: |
