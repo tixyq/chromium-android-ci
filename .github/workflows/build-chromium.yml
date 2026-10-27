@@ -117,7 +117,15 @@ jobs:
             git fetch --depth 1 origin "${VERSION}"
           git checkout -f "${VERSION}"
           cd ..
-          gclient sync -D --force --reset --with_branch_heads --nohooks
+          # googlesource occasionally returns 429; retry with backoff.
+          for attempt in 1 2 3 4 5; do
+            if gclient sync -D --force --reset --with_branch_heads --nohooks; then
+              break
+            fi
+            echo "gclient sync failed (attempt $attempt), retrying in $((attempt*30))s"
+            sleep $((attempt*30))
+            [ "$attempt" = "5" ] && exit 1
+          done
 
       - name: Install Chromium build deps
         run: |
