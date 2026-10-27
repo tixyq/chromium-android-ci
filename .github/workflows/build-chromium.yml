@@ -1,0 +1,170 @@
+name: Build Chromium ARM32 (Android 8.1)
+
+on:
+  workflow_dispatch:
+    inputs:
+      chromium_version:
+        description: "Chromium tag or branch (e.g. 120.0.6099.230)"
+        required: true
+        default: "120.0.6099.230"
+      build_target:
+        description: "Ninja target"
+        required: true
+        default: "chrome_public_apk"
+  push:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # Ubuntu 22.04 runner: x86_64, 4 vCPU / 16 GB RAM / 14 GB SSD (ephemeral).
+    runs-on: ubuntu-22.04
+    timeout-minutes: 350
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          set -eux
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/ndk \
+                      /opt/ghc /usr/local/share/boost /usr/share/swift \
+                      /usr/local/lib/android /opt/hostedtoolcache/CodeQL
+          sudo apt-get clean
+          df -h /
+
+      - name: Expand swap (helps ThinLTO link)
+        run: |
+          set -eux
+          sudo fallocate -l 12G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=12288
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
+      - name: Install build deps
+        run: |
+          set -eux
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            git python3 python3-pip curl unzip lsb-release \
+            build-essential pkg-config libc6-dev \
+            libnss3-dev libx11-xcb-dev libxcb1-dev \
+            libglib2.0-dev libdbus-1-dev libgdk-pixbuf2.0-dev \
+            libpango1.0-dev libfontconfig1-dev \
+            gperf bison flex ca-certificates
+          python3 --version
+
+      - name: Fetch depot_tools
+        run: |
+          set -eux
+          git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git "$HOME/depot_tools"
+          echo "$HOME/depot_tools" >> "$GITHUB_PATH"
+
+      - name: Cache gclient / src
+        uses: actions/cache@v4
+        with:
+          path: |
+            $HOME/chromium/src
+            $HOME/chromium/.gclient
+          key: chromium-${{ inputs.chromium_version || '120.0.6099.230' }}-v1
+          restore-keys: |
+            chromium-${{ inputs.chromium_version || '120.0.6099.230' }}-
+            chromium-
+
+      - name: Configure .gclient
+        env:
+          VERSION: ${{ inputs.chromium_version || '120.0.6099.230' }}
+        run: |
+          set -eux
+          mkdir -p "$HOME/chromium"
+          cd "$HOME/chromium"
+          cat > .gclient <<EOF
+          solutions = [
+            {
+              "name": "src",
+              "url": "https://chromium.googlesource.com/chromium/src.git",
+              "managed": False,
+              "custom_deps": {},
+              "custom_vars": {},
+            },
+          ]
+          target_os = ["android"]
+          EOF
+          if [ ! -d src/.git ]; then
+            fetch --nohooks --no-history chromium
+          fi
+          cd src
+          git fetch --depth 1 origin "refs/tags/${VERSION}:refs/tags/${VERSION}" || \
+            git fetch --depth 1 origin "${VERSION}"
+          git checkout -f "${VERSION}"
+          gclient sync -D --force --reset --with_branch_heads --nohooks
+
+      - name: Install Chromium build deps
+        run: |
+          set -eux
+          cd "$HOME/chromium/src"
+          ./build/install-build-deps.sh --no-prompt --no-chromeos-fonts --no-arm
+
+      - name: Run hooks (ARM sysroot, Android NDK)
+        run: |
+          set -eux
+          cd "$HOME/chromium/src"
+          gclient runhooks
+
+      - name: Write args.gn
+        run: |
+          set -eux
+          cd "$HOME/chromium/src"
+          cp "$GITHUB_WORKSPACE/args.gn" out/arm32/args.gn
+          # Strip flags that newer Chromium rejects, if present.
+          sed -i '/^enable_remoting/d;/^enable_cardboard/d;/^enable_arcore/d;/^enable_gvr_services/d' out/arm32/args.gn
+          echo '--- args.gn ---'
+          cat out/arm32/args.gn
+
+      - name: gn gen
+        run: |
+          set -eux
+          cd "$HOME/chromium/src"
+          gn gen out/arm32 --args="$(cat out/arm32/args.gn | tr '\n' ' ')"
+          gn args out/arm32 --list > out/arm32/args.list || true
+
+      - name: Build
+        run: |
+          set -eux
+          cd "$HOME/chromium/src"
+          autoninja -C out/arm32 -j 3 -l 4 "${{ inputs.build_target || 'chrome_public_apk' }}"
+
+      - name: Collect artifacts
+        if: always()
+        run: |
+          set -eux
+          cd "$HOME/chromium/src"
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
+          find out/arm32 -maxdepth 3 \( -name '*.apk' -o -name '*.apks' -o -name '*.aab' \) -print0 \
+            | xargs -0 -I{} cp -v {} "$GITHUB_WORKSPACE/artifacts/" || true
+          ls -lh "$GITHUB_WORKSPACE/artifacts" || true
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: chromium-arm32-apk
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload ninja log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ninja-log
+          path: |
+            $HOME/chromium/src/out/arm32/.ninja_log
+            $HOME/chromium/src/out/arm32/args.gn
+          if-no-files-found: ignore
+          retention-days: 7

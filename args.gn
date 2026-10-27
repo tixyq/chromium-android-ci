@@ -1,0 +1,25 @@
+target_os = "android"
+target_cpu = "arm"
+arm_version = 7
+arm_float_abi = "softfp"
+
+is_debug = false
+is_official_build = true
+optimize_for_size = true
+use_thin_lto = true
+symbol_level = 0
+is_component_build = false
+
+chrome_public_manifest_package = "com.android.chromium"
+
+enable_nacl = false
+enable_remoting = false
+enable_media_router = false
+enable_vr = false
+enable_cardboard = false
+enable_arcore = false
+enable_gvr_services = false
+safe_browsing_mode = 0
+
+target_android_sdk_version = 27
+android_min_sdk_version = 27
