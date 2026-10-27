@@ -17,7 +17,9 @@ enable_media_router = false
 enable_cardboard = false
 enable_arcore = false
 enable_gvr_services = false
-safe_browsing_mode = 0
+# Safe Browsing kept enabled: disabling it leaves Java classes that reference JNI
+# without a matching generate_jni() target, which fails the JNI registration check.
+safe_browsing_mode = 1
 
 target_android_sdk_version = 27
 android_min_sdk_version = 27
