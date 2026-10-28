@@ -22,7 +22,8 @@ jobs:
   build:
     # Ubuntu 22.04 runner: x86_64, 4 vCPU / 16 GB RAM / 14 GB SSD (ephemeral).
     runs-on: ubuntu-22.04
-    timeout-minutes: 350
+    # Full Chromium ARM32 build with ThinLTO needs ~10h on a 4-core runner.
+    timeout-minutes: 1200
 
     steps:
       - name: Checkout repo
@@ -72,6 +73,7 @@ jobs:
           path: |
             $HOME/chromium/src
             $HOME/chromium/.gclient
+            $HOME/chromium/src/out/arm32
           key: chromium-${{ inputs.chromium_version || '120.0.6099.230' }}-v1
           restore-keys: |
             chromium-${{ inputs.chromium_version || '120.0.6099.230' }}-
@@ -167,7 +169,7 @@ jobs:
           set -eux
           cd "$HOME/chromium/src"
           # autoninja forwards -j to siso, which dropped that flag; use ninja directly.
-          ninja -C out/arm32 -j 3 "${{ inputs.build_target || 'chrome_public_apk' }}"
+          ninja -C out/arm32 -j 3 -k 0 "${{ inputs.build_target || 'chrome_public_apk' }}"
 
       - name: Collect artifacts
         if: always()
