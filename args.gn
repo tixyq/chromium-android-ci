@@ -4,21 +4,20 @@ arm_version = 7
 arm_float_abi = "softfp"
 
 is_debug = false
-is_official_build = true
-optimize_for_size = true
-use_thin_lto = true
-symbol_level = 0
+# Official build + ThinLTO does not fit in a free 4-core / 6h runner.
+# Turning both off yields a working release APK that builds in one job.
+is_official_build = false
 is_component_build = false
+use_thin_lto = false
+use_lld = true
+symbol_level = 0
+optimize_for_size = true
 
 chrome_public_manifest_package = "com.android.chromium"
 
 enable_nacl = false
 enable_media_router = false
-enable_cardboard = false
-enable_arcore = false
-enable_gvr_services = false
-# Safe Browsing kept enabled: disabling it leaves Java classes that reference JNI
-# without a matching generate_jni() target, which fails the JNI registration check.
+# Safe Browsing stays on: disabling it breaks the JNI registration check.
 safe_browsing_mode = 1
 
 target_android_sdk_version = 27

@@ -169,29 +169,12 @@ jobs:
           gn gen out/arm32 --args="$(cat out/arm32/args.gn | tr '\n' ' ')"
           gn args out/arm32 --list > out/arm32/args.list || true
 
-      # GitHub enforces a hard 6h cap per job. Build in <=3h chunks, caching
-      # out/arm32 between chunks so each step resumes incrementally.
-      # Each GitHub job is capped at 6h. Build in chunks that stop early enough
-      # to cache out/arm32, then resume from cache on the next run.
-      - name: Build chunk A
+      - name: Build
         run: |
-          set -ux
+          set -eux
           cd "$HOME/chromium/src"
-          timeout --signal=INT 12000 ninja -C out/arm32 -j 3 -k 0 "${{ inputs.build_target || 'chrome_public_apk' }}" || true
-          ls -lh out/arm32/apks/ 2>/dev/null || true
-
-      - name: Save build cache for resume
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: $HOME/chromium/src/out/arm32
-          key: chromium-out-arm32-${{ github.run_id }}-${{ github.run_attempt }}
-
-      - name: Build chunk B
-        run: |
-          set -ux
-          cd "$HOME/chromium/src"
-          timeout --signal=INT 12000 ninja -C out/arm32 -j 3 -k 0 "${{ inputs.build_target || 'chrome_public_apk' }}" || true
+          # Stop 10 min before the 6h job cap so artifacts still get collected.
+          timeout --signal=INT 21000 ninja -C out/arm32 -j 4 -k 0 "${{ inputs.build_target || 'chrome_public_apk' }}"
           ls -lh out/arm32/apks/ 2>/dev/null || true
 
       - name: Collect artifacts
