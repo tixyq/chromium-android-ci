@@ -154,27 +154,45 @@ jobs:
           echo '--- args.gn ---'
           cat out/arm32/args.gn
 
-      - name: Restore partial build output
-        uses: actions/cache/restore@v4
+      # The free runner hard-caps every job at 6h, and a full build needs ~8h.
+      # Build in chunks that stop before the cap, then persist out/arm32 as an
+      # artifact so the next run resumes instead of starting over.
+      - name: Restore previous build output
+        continue-on-error: true
+        uses: actions/download-artifact@v4
         with:
+          name: arm32-out-resume
           path: $HOME/chromium/src/out/arm32
-          key: chromium-out-arm32-none
-          restore-keys: |
-            chromium-out-arm32-
 
       - name: gn gen
         run: |
           set -eux
           cd "$HOME/chromium/src"
+          mkdir -p out/arm32
           gn gen out/arm32 --args="$(cat out/arm32/args.gn | tr '\n' ' ')"
-          gn args out/arm32 --list > out/arm32/args.list || true
 
-      - name: Build
+      - name: Build (chunk 1)
+        run: |
+          set -ux
+          cd "$HOME/chromium/src"
+          timeout --signal=INT 18000 ninja -C out/arm32 -j 4 -k 0 "${{ inputs.build_target || 'chrome_public_apk' }}" || true
+          ls -lh out/arm32/apks/ 2>/dev/null || true
+
+      - name: Save build output (chunk 1)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arm32-out-resume
+          path: $HOME/chromium/src/out/arm32
+          retention-days: 3
+          compression-level: 0
+          overwrite: true
+
+      - name: Build (chunk 2)
         run: |
           set -eux
           cd "$HOME/chromium/src"
-          # Stop 10 min before the 6h job cap so artifacts still get collected.
-          timeout --signal=INT 21000 ninja -C out/arm32 -j 4 -k 0 "${{ inputs.build_target || 'chrome_public_apk' }}"
+          ninja -C out/arm32 -j 4 -k 0 "${{ inputs.build_target || 'chrome_public_apk' }}"
           ls -lh out/arm32/apks/ 2>/dev/null || true
 
       - name: Collect artifacts
