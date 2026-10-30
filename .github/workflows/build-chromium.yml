@@ -64,17 +64,9 @@ jobs:
           git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git "$HOME/depot_tools"
           echo "$HOME/depot_tools" >> "$GITHUB_PATH"
 
-      - name: Cache gclient / src
-        uses: actions/cache@v4
-        with:
-          path: |
-            $HOME/chromium/src
-            $HOME/chromium/.gclient
-            $HOME/chromium/src/out/arm32
-          key: chromium-${{ inputs.chromium_version || '120.0.6099.230' }}-v1
-          restore-keys: |
-            chromium-${{ inputs.chromium_version || '120.0.6099.230' }}-
-            chromium-
+      # actions/cache silently declines to save anything >10 GB, and a Chromium
+      # checkout plus out/arm32 is far larger. Persist the build output as an
+      # artifact instead (see "Save build output"), which is what actually works.
 
       - name: Configure .gclient
         env:
@@ -159,10 +151,24 @@ jobs:
       # artifact so the next run resumes instead of starting over.
       - name: Restore previous build output
         continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          name: arm32-out-resume
-          path: $HOME/chromium/src/out/arm32
+        run: |
+          set -eux
+          mkdir -p /home/runner/chromium/src/out/arm32
+          RUNS=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?per_page=30" --jq '[.workflow_runs[]|select(.id != '"$GITHUB_RUN_ID"')|.id]|.[]')
+          for run in $RUNS; do
+            if gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/artifacts" \
+                 --jq '.artifacts[]|select(.name=="arm32-out-resume" and .expired==false)|.name' 2>/dev/null | grep -q arm32-out-resume; then
+              echo "restoring from run $run"
+              rm -rf /tmp/resume-in && mkdir -p /tmp/resume-in
+              gh run download "$run" -R "$GITHUB_REPOSITORY" -n arm32-out-resume -D /tmp/resume-in || continue
+              cat /tmp/resume-in/part-* > /tmp/out-arm32.tar.zst
+              tar --zstd -xf /tmp/out-arm32.tar.zst -C /home/runner/chromium/src/out/arm32
+              exit 0
+            fi
+          done
+          echo "no previous build output found, starting fresh"
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: gn gen
         run: |
@@ -175,15 +181,30 @@ jobs:
         run: |
           set -ux
           cd "$HOME/chromium/src"
-          timeout --signal=INT 18000 ninja -C out/arm32 -j 4 -k 0 "${{ inputs.build_target || 'chrome_public_apk' }}" || true
+          timeout --signal=INT 15000 ninja -C out/arm32 -j 4 -k 0 "${{ inputs.build_target || 'chrome_public_apk' }}" || true
           ls -lh out/arm32/apks/ 2>/dev/null || true
 
+      # The whole out/arm32 (objects included) is what makes resume possible,
+      # but it is far too big for a single artifact. Split it into parts and
+      # upload each one; the restore step stitches them back together.
       - name: Save build output (chunk 1)
+        if: always()
+        run: |
+          set -eux
+          cd /home/runner/chromium/src/out/arm32
+          rm -rf /tmp/resume && mkdir -p /tmp/resume
+          tar --zstd -cf /tmp/resume/out-arm32.tar.zst .
+          ls -lh /tmp/resume/out-arm32.tar.zst
+          split -b 1800M -d -a 3 /tmp/resume/out-arm32.tar.zst /tmp/resume/part-
+          ls -lh /tmp/resume/
+          echo "PARTS=$(ls /tmp/resume/part-* | wc -l)" >> "$GITHUB_ENV"
+
+      - name: Upload build output parts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: arm32-out-resume
-          path: $HOME/chromium/src/out/arm32
+          path: /tmp/resume/part-*
           retention-days: 3
           compression-level: 0
           overwrite: true
